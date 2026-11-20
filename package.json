@@ -1,5 +1,5 @@
 {
-  "name": "guptally",
+  "name": "om-portfolio",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
@@ -7,13 +7,13 @@
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.5.2",
+    "@types/three": "^0.185.3",
     "lucide-react": "^0.544.0",
-    "primeicons": "^7.0.0",
-    "primereact": "^10.7.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-icons": "^5.5.0",
     "react-scripts": "5.0.1",
+    "three": "^0.185.1",
     "web-vitals": "^4.2.2"
   },
   "devDependencies": {

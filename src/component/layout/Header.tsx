@@ -22,6 +22,14 @@ const navLinks = [
 export const Header: React.FC<HeaderProps> = ({ onNavLinkClick }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [showResponseModal, setShowResponseModal] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [apiResponse, setApiResponse] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const handleMobileLinkClick = (id: string) => {
     onNavLinkClick(id);
@@ -57,6 +65,115 @@ export const Header: React.FC<HeaderProps> = ({ onNavLinkClick }) => {
     { label: "LinkedIn", value: "linkedin" },
   ];
 
+  const handleCloseModal = () => {
+    setShowResponseModal(false);
+    setApiResponse(null);
+    setIsUploading(false);
+    setUploadStatus(null);
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
+  };
+
+  const handlePlayAudio = () => {
+    if (!apiResponse || !('speechSynthesis' in window)) {
+      console.error('Speech synthesis not supported or no response to speak.');
+      return;
+    }
+
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    let textToSpeak = apiResponse;
+    try {
+      const parsedResponse = JSON.parse(apiResponse);
+      if (parsedResponse && parsedResponse.message) {
+        textToSpeak = parsedResponse.message;
+      }
+    } catch (e) {
+      console.log('API response is not a valid JSON object with a message property. Reading the full response.');
+    }
+
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+    utterance.onend = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+    setIsSpeaking(true);
+  };
+
+  const handleUploadClick = async () => {
+    setIsUploading(true);
+    setUploadStatus('Initializing camera...');
+
+    if (!videoRef.current || !canvasRef.current) {
+      setUploadStatus('Error: Required elements are not ready.');
+      setIsUploading(false);
+      return;
+    }
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      await video.play();
+
+      setUploadStatus('Capturing photo...');
+
+      // Capture after a short delay to allow the camera to adjust
+      setTimeout(async () => {
+        const context = canvas.getContext('2d');
+        if (context) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+          const base64Image = canvas.toDataURL('image/jpeg').split(',')[1];
+
+          // Stop the camera stream
+          stream.getTracks().forEach(track => track.stop());
+
+          setUploadStatus('Uploading image...');
+
+          const response = await fetch('https://blind-ai-2-371470408138.us-central1.run.app', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              imageCode: base64Image,
+              description: "Image captured from user's camera for analysis.",
+            }),
+          });
+
+          const responseData = await response.text();
+
+          console.log('API Response:', {
+            status: response.status,
+            ok: response.ok,
+            body: responseData,
+          });
+
+          if (!response.ok) {
+            throw new Error(`API request failed with status ${response.status}: ${responseData}`);
+          }
+
+          setApiResponse(responseData);
+          setUploadStatus('Analysis complete!');
+        }
+      }, 500);
+    } catch (error) {
+      const errorMessage = (error as Error).message;
+      console.error('Upload failed:', errorMessage);
+      setUploadStatus(`Error: ${errorMessage}`);
+      setApiResponse(`Upload Failed:\n${errorMessage}`);
+      // Keep isUploading true to show the error state until the user closes the modal
+    }
+  };
+
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-md ">
       <nav className="container mx-auto px-4 flex justify-between items-center relative nav-padding">
@@ -69,6 +186,10 @@ export const Header: React.FC<HeaderProps> = ({ onNavLinkClick }) => {
           />
         </a>
        
+        {/* Hidden elements for camera capture */}
+        <video ref={videoRef} style={{ display: 'none' }}></video>
+        <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
+
         
         <div className='flex '>
         
@@ -98,6 +219,24 @@ export const Header: React.FC<HeaderProps> = ({ onNavLinkClick }) => {
             )}
           </div>
         
+          {apiResponse && !showResponseModal ? (
+            <button
+              onClick={() => setShowResponseModal(true)}
+              className="ml-4 text-white bg-green-600 hover:bg-green-700 transition-colors duration-300 text-xs rounded-md p-1"
+              style={{ textAlign: 'right', marginLeft: 'auto', marginRight: '10px' }}
+            >
+              View Response
+            </button>
+          ) : (
+          <button
+            onClick={handleUploadClick}
+            disabled={isUploading}
+            className="ml-4 text-black hover:text-indigo-800 transition-colors duration-300 text-xs bg-gray-100 rounded-md p-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ textAlign: 'right', marginLeft: 'auto', marginRight: '10px' }}
+          >
+            {isUploading ? (uploadStatus || 'Uploading...') : 'Upload Photo'}
+          </button>
+          )}
           <a          href="mailto:omchs10@gmail.com?subject=Inquiry"
             className="ml-4 text-black hover:text-indigo-800 transition-colors duration-300 text-xs bg-gray-100 rounded-md p-1"
             style={{ textAlign: 'right', marginLeft: 'auto', marginRight: '10px' }}
@@ -121,6 +260,30 @@ export const Header: React.FC<HeaderProps> = ({ onNavLinkClick }) => {
             ))}
           </nav>
         </div>
+        {showResponseModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">API Response</h3>
+              <pre className="bg-gray-100 p-4 rounded-md text-sm text-gray-800 whitespace-pre-wrap overflow-auto max-h-96">
+                {apiResponse}
+              </pre>
+              <div className="mt-6 flex justify-end space-x-4">
+                <button
+                  onClick={handlePlayAudio}
+                  className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors duration-300"
+                >
+                  {isSpeaking ? 'Stop' : 'Play Audio'}
+                </button>
+                <button
+                  onClick={handleCloseModal}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition-colors duration-300"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </nav>
     </header>
   );
